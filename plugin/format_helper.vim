@@ -1,8 +1,8 @@
 " Title:	Vim Format Helper
 " Maintainer:	Frank Sun <frank.sun.319@gmail.com>
 " Description:
-" Last Change:	2008-10-27
-" Version:	1.5
+" Last Change:	2008-10-28
+" Version:	1.7
 
 " Only do this when not done yet for this buffer
 if exists("b:format_helper")
@@ -26,6 +26,7 @@ let g:format_list_ceil = 0
 let g:format_list_floor = 0
 let g:format_list_indent = 0
 let g:format_list_interval = 1
+let g:format_list_max_scope = 100
 
 " global variables to control effect of head line and foot line
 let g:format_head_ceil = 0
@@ -293,33 +294,63 @@ function! <SID>:MakeCharacters(width,character)
     return characters
 endfunction <SID>:MakeCharacters
 
+function! <SID>:StyleParser(style)
+    let style = substitute(a:style,'\s','','g')
+    let idxstart = match(style,'?')
+    if idxstart >= 0
+        let poststart = match(style,'?\zs')
+        let index = '?'
+    else
+        let idxstart = match(style,'\d')
+        if idxstart >= 0
+            let poststart = match(style,'\d\+\zs')
+            let index = strpart(style,idxstart,(poststart-idxstart))
+        else
+            return ['','','']
+        endif
+    endif
+    return [strpart(style,0,idxstart),index,strpart(style,poststart,(len(style)-poststart))]
+endfunction <SID>:StyleParser
+
+function! <SID>:LastNumberList(lineno,presegment,postsegment)
+    let inf = max([1,a:lineno - g:format_list_max_scope])
+    let ln = a:lineno
+    while ln >= inf
+        let line = substitute(getline(ln),'^\s*','','')
+        if line =~ '^' . a:presegment . '\d\+' . a:postsegment . '.*$'
+            let endpoint = match(line,'\d\+\zs')
+            return strpart(line,len(a:presegment),endpoint - len(a:presegment))
+        endif
+        let ln -= 1
+    endwhile
+    return 0
+endfunction <SID>:LastNumberList
+
 function! s:List.Numberlist.NumberList(style,action) range
-    let position = match(a:style,'?')
-    if position == -1
+    let parsed = <SID>:StyleParser(a:style)
+    if parsed[1] == ''
         return
     endif
-    let presegment = strpart(a:style,0,position)
-    let postsegment = substitute(strpart(a:style,position + 1,len(a:style) - len(presegment)),'\s\+','','')
-
     if a:action == 'a'
-        call s:List.Numberlist.Add(a:firstline,a:lastline,presegment,postsegment)
+        call s:List.Numberlist.Add(a:firstline,a:lastline,parsed[0],parsed[1],parsed[2])
     elseif a:action == 'd'
-        call s:List.Numberlist.Del(a:firstline,a:lastline,presegment,postsegment)
+        call s:List.Numberlist.Del(a:firstline,a:lastline,parsed[0],parsed[2])
     endif
 endfunction s:List.Numberlist.NumberList
 
 " action == 'a': add number list to selected lines;
 " action == 'd': cancel number list from selected lines.
-function! s:List.Numberlist.Add(beg,end,presegment,postsegment)
+function! s:List.Numberlist.Add(beg,end,presegment,index,postsegment)
     let indentspaces = <SID>:MakeCharacters(g:format_list_indent,' ')
     let intervalspaces = <SID>:MakeCharacters(g:format_list_interval,' ')
     let lineno = a:end
     let idx = s:Docinfo.CountLines(a:beg,a:end,'e')
+    let idx += (a:index == '?' ? <SID>:LastNumberList(lineno,a:presegment,a:postsegment) : a:index - 1)
     let spaces = ''
     while lineno >= a:beg
         let line = substitute(getline(lineno),'^\s*','','')
         if line !~ '^\s*$'
-            call setline(lineno,indentspaces.a:presegment.idx.a:postsegment.intervalspaces.line)
+            call setline(lineno,indentspaces.spaces.a:presegment.idx.a:postsegment.intervalspaces.line)
             let idx -= 1
             if idx =~ '^9\d*$'
                 let spaces .= ' '

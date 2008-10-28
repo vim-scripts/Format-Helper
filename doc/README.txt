@@ -37,7 +37,12 @@ FUNCTIONS OUTLINE
 2. Number list addition and deletion
 ------------------------------------
 
-    The advantage of this function is that you can set the format of item head to any style as you wish, such as, (1), [1], {1}, 1., -1-, etc. And them can also be deleted by this script. Two command are provided:
+    This is a cute function:
+
+    (1) You can set the format of item head to any style as you wish, such as, (1), [1], {1}, 1., -1-, etc. And them can also be deleted by this script.
+    (2) It will acquire the head of the last item in previous number list, and make the first index of current list continue with the previous list's last index.
+
+    Two command are provided:
 
         ++++++++++++++++++++++++++++++++++++++
         +   :[range]AddNumberList {format}   +
@@ -47,7 +52,11 @@ FUNCTIONS OUTLINE
 * Detail:
 
     [range] - same usage as Statistics.
-    {format} - includes three segments: a presegment, a question mark ('?'), and a postsegment. You can set presegment and postsegment to any style you like. The '?' means list index.
+    {format} - includes three segments: a presegment, a number or a question mark ('?'), and a postsegment. You can set presegment and postsegment to any style you like. If a number is located in between presegment and postsegment, then the first index of number list is set to the number. Otherwise, if a qusetion mark is located there, script will automatically acquire the last index of previous number list and continue with it.
+
+* NOTE:
+
+    (1) If a question mark is neighboring with numbers in a style, the index will be continued with previous list.
 
 * Control parameters: some global variables to control format effect
 
@@ -55,43 +64,66 @@ FUNCTIONS OUTLINE
     g:format_list_floor (default 0): empty lines form the last line of list to below content.
     g:format_list_indent (default 0): indent spaces from beginning of current line to the item head.
     g:format_list_interval (default 1): interval (spaces) from last character of item head to the line body.
+    g:format_list_max_scope (default 100): max lines to search the last index of previous number list from assigned line number.
 
 * Example:
 
     Here are selected lines:
 
-######################
-#   this is line1    #
-#   this is line2    #
-#   ......           #
-#   this is line10   #
-######################
+#line
+         ######################
+    1    #   this is line1    #
+    2    #   this is line2    #
+         #   ......           #
+   10    #   this is line10   #
+         ######################
 
 If you input a command:
 
-    :'<,'> AddNumberList (?)
+    :1,5 AddNumberList (1)
 
 they will be changed to:
 
-###########################
-#    (1) this is line1    #
-#    (2) this is line2    #
-#    ......               #
-#   (10) this is line10   #
-###########################
+#line
+        #########################
+    1   #   (1) this is line1   #
+        #    ......             #
+    5   #   (5) this is line2   #
+    6   #   this is line6       #
+        #    ......             #
+   10   #   this is line10      #
+        #########################
 
-If you want to cancel the number list you selected, just input a command:
+If you want to continue this list across 3 lines, add line 9 and line 10 to the number list, you have two approaches--first one, you can assign the index of new head manually, for instance, you've already remembered the last index of previous number list was '5', then you should input:
 
-    :'<,'> DelNumberList (?)
+    :9,10 AddNumberList (6)
 
-If you want to add a number list from line 3 to line 19 with a head style, presegment="XX**", postsegment="@@=$%", you just input:
+the other one is to call script to automatically acquire a continuous index, here, you should use question mark '?':
 
-    :3,19 AddNumberList  XX**?@@=$%
+    :9,10 AddNumberList (?)
+
+both of these two approaches will change file to below:
+
+#line
+        #########################
+    1   #   (1) this is line1   #
+        #    ......             #
+    5   #   (5) this is line2   #
+    6   #   this is line6       #
+    7   #   this is line7       #
+    8   #   this is line8       #
+    9   #   (6) this is line9   #
+   10   #   (7) this is line10  #
+        #########################
+
+If you want to cancel this number list, just input a command:
+
+    :1,10 DelNumberList (?)
 
 3. Auto-fit alignation
 ----------------------
 
-    Vim provide three command to align line, :left, :center and :right, but these command cannot align line to correct position. It is caused by some factors, such as, different size of users' screen, different size of gvim's window, and the most important factor--the 'textwidth' is equal to 80 by default. 
+    Vim provide three commands to align line, ":left", ":center" and ":right", but these command cannot align line to correct position. It is caused by some factors, such as, different size of users' screen, different size of gvim's window, and the most important factor--the 'textwidth' is equal to 80 by default. 
     Here provide three new commands that auto-fit different size of screen or window, and handle alignations correctly.
 
         ++++++++++++++++++++++
@@ -244,3 +276,10 @@ By default, GetLatestVimScripts plugin is included in Vim installation package, 
                            2418 1 format-helper
 
 and use this command ":GetLatestVimScripts" to upgrade it.
+
+
+**************
+*   NOTICE   *
+**************
+
+    When you want to hack this script, please make sure that the option 'Tlist_Show_Menu' is closed (set its value as 0) if "Taglist" plugin was installed in your Vim. Otherwise, it will popup an annoyed message "E792: Empty menu name".
