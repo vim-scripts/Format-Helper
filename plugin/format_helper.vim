@@ -25,8 +25,8 @@ let g:format_align_offset = 0
 let g:format_list_ceil = 0
 let g:format_list_floor = 0
 let g:format_list_indent = 0
-let g:format_list_interval = 1
 let g:format_list_max_scope = 100
+let s:format_list_interval = 1
 
 " global variables to control effect of head line and foot line
 let g:format_head_ceil = 0
@@ -39,7 +39,7 @@ let g:format_block_floor = 0
 let g:format_block_indent = 0
 let g:format_block_internal_ceil = 0
 let g:format_block_internal_floor = 0
-let g:format_block_interval = 3
+let s:format_block_interval = 3
 
 
 """""""""""""""""""""""""""""""""""""""""""""""""""
@@ -220,7 +220,7 @@ endfunction s:List.Enumeratelist.EnumerateList
 function! s:List.Enumeratelist.Add(beg,end,style)
     let linenum = a:beg
     let indentspaces = <SID>:MakeCharacters(g:format_list_indent,' ')
-    let intervalspaces = <SID>:MakeCharacters(g:format_list_interval,' ')
+    let intervalspaces = <SID>:MakeCharacters(s:format_list_interval,' ')
     while linenum <= a:end
         let line = getline(linenum)
         if line !~ '^\s*$'
@@ -232,12 +232,16 @@ function! s:List.Enumeratelist.Add(beg,end,style)
     call <SID>:InsertLinesDownwards(a:end + g:format_list_ceil,g:format_list_floor)
 endfunction s:List.Enumeratelist.Add
 
+" any line in selected area which matches:
+" 'sytle.space(s:format_list_interval)'
+" will be deleted
 function! s:List.Enumeratelist.Del(beg,end,style)
     let linenum = a:beg
-    let spaces = <SID>:MakeCharacters(g:format_list_interval,' ')
+    let spaces = <SID>:MakeCharacters(s:format_list_interval,' ')
     while linenum <= a:end
         let line = substitute(getline(linenum),'^\s*','','')
-        if line[:len(a:style)] == (a:style . spaces)
+        " style would not be null
+        if line[:(len(a:style) + s:format_list_interval - 1)] == (a:style . spaces)
             call setline(linenum,substitute(line[len(a:style):],'^\s*','',''))
         endif
         let linenum += 1
@@ -294,22 +298,36 @@ function! <SID>:MakeCharacters(width,character)
     return characters
 endfunction <SID>:MakeCharacters
 
+" NOTE: string should not include space
+function! <SID>:ParseQuestionMark(string)
+    let idxstart = match(a:string,'?')
+    if idxstart >= 0
+        " if ? located on the end of line, then return len(line)
+        let poststart = match(a:string,'?\zs')
+        return [strpart(a:string,0,idxstart),'?',strpart(a:string,poststart,len(a:string)-poststart)]
+    endif
+    return ['','','']
+endfunction <SID>:ParseQuestionMark
+
+" NOTE: string should not include space
+function! <SID>:ParseNumber(string)
+    let idxstart = match(a:string,'\d')
+    if idxstart >= 0
+        " if \d\+ located on the end of line, then return len(line)
+        let poststart = match(a:string,'\d\+\zs')
+        return [strpart(a:string,0,idxstart),strpart(a:string,idxstart,poststart-idxstart),strpart(a:string,poststart,len(a:string)-poststart)]
+    endif
+    return ['','','']
+endfunction <SID>:ParseNumber
+
 function! <SID>:StyleParser(style)
     let style = substitute(a:style,'\s','','g')
-    let idxstart = match(style,'?')
-    if idxstart >= 0
-        let poststart = match(style,'?\zs')
-        let index = '?'
-    else
-        let idxstart = match(style,'\d')
-        if idxstart >= 0
-            let poststart = match(style,'\d\+\zs')
-            let index = strpart(style,idxstart,(poststart-idxstart))
-        else
-            return ['','','']
-        endif
+    let tokens = <SID>:ParseQuestionMark(a:style)
+    if tokens[1] != ''
+        return tokens
     endif
-    return [strpart(style,0,idxstart),index,strpart(style,poststart,(len(style)-poststart))]
+    let tokens = <SID>:ParseNumber(a:style)
+    return tokens
 endfunction <SID>:StyleParser
 
 function! <SID>:LastNumberList(lineno,presegment,postsegment)
@@ -317,9 +335,19 @@ function! <SID>:LastNumberList(lineno,presegment,postsegment)
     let ln = a:lineno
     while ln >= inf
         let line = substitute(getline(ln),'^\s*','','')
-        if line =~ '^' . a:presegment . '\d\+' . a:postsegment . '.*$'
-            let endpoint = match(line,'\d\+\zs')
-            return strpart(line,len(a:presegment),endpoint - len(a:presegment))
+        let idxstart = match(line,'\d')
+        if strpart(line,0,idxstart) == a:presegment
+            let line = strpart(line,idxstart,(len(line) - idxstart))
+            if line !~ '^\d\+'
+                let ln -= 1
+                continue
+            endif
+            let number = strpart(line,0,match(line,'\d\+\zs'))
+            let line = substitute(line,'^\d\+','','')
+            let spaces = <SID>:MakeCharacters(s:format_list_interval,' ')
+            if strpart(line,0,(len(a:postsegment)+s:format_list_interval)) == a:postsegment . spaces
+                return number
+            endif
         endif
         let ln -= 1
     endwhile
@@ -342,7 +370,7 @@ endfunction s:List.Numberlist.NumberList
 " action == 'd': cancel number list from selected lines.
 function! s:List.Numberlist.Add(beg,end,presegment,index,postsegment)
     let indentspaces = <SID>:MakeCharacters(g:format_list_indent,' ')
-    let intervalspaces = <SID>:MakeCharacters(g:format_list_interval,' ')
+    let intervalspaces = <SID>:MakeCharacters(s:format_list_interval,' ')
     let lineno = a:end
     let idx = s:Docinfo.CountLines(a:beg,a:end,'e')
     let idx += (a:index == '?' ? <SID>:LastNumberList(lineno,a:presegment,a:postsegment) : a:index - 1)
@@ -362,6 +390,9 @@ function! s:List.Numberlist.Add(beg,end,presegment,index,postsegment)
     call <SID>:InsertLinesDownwards(a:end + g:format_list_ceil,g:format_list_floor)
 endfunction s:List.Numberlist.Add
 
+" any line in selected area which matches:
+" 'presegment.\d\+.postsegment.space(s:format_list_interval)'
+" will be deleted
 function! s:List.Numberlist.Del(beg,end,presegment,postsegment)
     let lineno = a:end
     while lineno >= a:beg
@@ -380,8 +411,13 @@ function! s:List.Numberlist.Del(beg,end,presegment,postsegment)
             let lineno -= 1
             continue
         endif
-        if a:postsegment !~ '^\s*$' && line[:len(a:postsegment)] == a:postsegment . ' '
-            call setline(lineno,substitute(line[len(a:postsegment):],'^\s*','',''))
+        if a:postsegment !~ '^\s*$'
+            let spaces = <SID>:MakeCharacters(s:format_list_interval,' ')
+            if line[:(len(a:postsegment) + s:format_list_interval - 1)] == (a:postsegment . spaces)
+                call setline(lineno,substitute(line[len(a:postsegment):],'^\s*','',''))
+            endif
+        else
+            call setline(lineno,substitute(line,'^\s*','',''))
         endif
         let lineno -= 1
     endwhile
@@ -433,18 +469,18 @@ function! s:Textblock.TextBlock(symbol,action) range
 endfunction s:Textblock.TextBlock
 
 function! s:Textblock.Add(beg,end,symbol)
-    let framewidth = <SID>:LongestLength(a:beg,a:end) + 2 * g:format_block_interval + 2
+    let framewidth = <SID>:LongestLength(a:beg,a:end) + 2 * s:format_block_interval + 2
     if framewidth > <SID>:RealTextWidth() - g:format_block_indent
         echo "Some lines' length larger than text width."
         return
     else
         let lineno = a:beg
         let indentspaces = <SID>:MakeCharacters(g:format_block_indent,' ')
-        let intervalspaces = <SID>:MakeCharacters(g:format_block_interval,' ')
+        let intervalspaces = <SID>:MakeCharacters(s:format_block_interval,' ')
         while lineno <= a:end
             let line = substitute(substitute(substitute(getline(lineno),'^\s*','',''),'\s*$','',''),'\t',' ','g')
-            let intervalspaces = <SID>:MakeCharacters(g:format_block_interval,' ')
-            call setline(lineno,indentspaces.a:symbol.intervalspaces.line.<SID>:MakeCharacters(framewidth-len(line)-g:format_block_interval-2,' ').a:symbol)
+            let intervalspaces = <SID>:MakeCharacters(s:format_block_interval,' ')
+            call setline(lineno,indentspaces.a:symbol.intervalspaces.line.<SID>:MakeCharacters(framewidth-len(line)-s:format_block_interval-2,' ').a:symbol)
             let lineno += 1
         endwhile
         let internalceilfloor = indentspaces.a:symbol.<SID>:MakeCharacters(framewidth - 2,' ').a:symbol
@@ -470,11 +506,11 @@ function! s:Textblock.Del(beg,end,symbol)
     let lineno = a:beg
     while lineno <= a:end
         let line = substitute(substitute(getline(lineno),'^\s*','',''),'\s*$','','')
-        if line[:(g:format_block_interval)] == a:symbol . <SID>:MakeCharacters(g:format_block_interval,' ')
-            let line = line[(g:format_block_interval+1):]
+        let spaces = <SID>:MakeCharacters(s:format_block_interval,' ')
+        if line[:(s:format_block_interval)] == (a:symbol . spaces)
+            let line = line[(s:format_block_interval+1):]
             if line[len(line) - 1] == a:symbol
-                let line = substitute(line[:(len(line) - 2)],'\s*$','','')
-                call setline(lineno,line)
+                call setline(lineno,substitute(line[:(len(line) - 2)],'\s*$','',''))
             endif
         endif
         if line == <SID>:MakeCharacters(len(line),a:symbol)

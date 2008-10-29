@@ -63,7 +63,6 @@ FUNCTIONS OUTLINE
     g:format_list_ceil (default 0): empty lines from above content to the first line of list.
     g:format_list_floor (default 0): empty lines form the last line of list to below content.
     g:format_list_indent (default 0): indent spaces from beginning of current line to the item head.
-    g:format_list_interval (default 1): interval (spaces) from last character of item head to the line body.
     g:format_list_max_scope (default 100): max lines to search the last index of previous number list from assigned line number.
 
 * Example:
@@ -151,7 +150,6 @@ If you want to cancel this number list, just input a command:
     g:format_list_ceil (default 0): empty lines from above content to the first line of list.
     g:format_list_floor (default 0): empty lines form the last line of list to below content.
     g:format_list_indent (default 0): indent spaces from beginning of current line to the item head.
-    g:format_list_interval (default 1): interval (spaces) from last character of item head to the line body.
 
 * Example:
 
@@ -189,7 +187,6 @@ input below command to cancel this enumerate list:
     g:format_block_indent (default 0): indent spaces from beginning of current line to left boundary of block.
     g:format_block_internal_ceil (default 0): empty lines form ceiling boundary to the first line of block contents.
     g:format_block_internal_floor (default 0):  empty line form the last line of block contents to floor boundary.
-    g:format_block_interval (default 3): interval (spaces) form left boundary to block contents.
 
 * Example:
 
