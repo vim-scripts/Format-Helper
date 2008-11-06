@@ -1,8 +1,8 @@
 " Title:	Vim Format Helper
 " Maintainer:	Frank Sun <frank.sun.319@gmail.com>
 " Description:
-" Last Change:	2008-10-28
-" Version:	1.7
+" Last Change:	2008-11-05
+" Version:	1.7.6
 
 " Only do this when not done yet for this buffer
 if exists("b:format_helper")
@@ -20,6 +20,10 @@ set cpo-=C
 """""""""""""""""""""""""""""""""""""""""""""""""""
 " global variable to control alignation effect
 let g:format_align_offset = 0
+
+" script variable to control statistics
+let s:format_docinfo_charmask = '[:alnum:][:blank:][:punct:]'
+let s:format_docinfo_wcharwidth = (&encoding == 'utf-8' ? 3 : 2)
 
 " global variables to control effect of enumerate list and number list
 let g:format_list_ceil = 0
@@ -106,7 +110,7 @@ command! -range -nargs=1 DelTextBlock <line1>,<line2>call s:Textblock.TextBlock(
 " Calculate statistics informations of selected lines, include:
 "	(1) number of all characters
 "	(2) number of non-space characters
-"	(3) number of words
+"	(3) number of words (asia-character and non-asia words)
 "	(4) number of lines
 "	(5) number of non-empty lines
 command! -range -nargs=0 Statistics <line1>,<line2>call s:Docinfo.Statistics()
@@ -151,45 +155,37 @@ function! <SID>:ClosePair(char)
     endif
 endfunction <SID>:ClosePair
 
-" flag == 'i': include spaces
-" flag == 'e': exclude spaces
-function! s:Docinfo.CountCharacters(beg,end,flag)
-    let characterscount = 0
-    if a:flag == 'i'
-        for line in getline(a:beg,a:end)
-            let characterscount += len(line)
-        endfor
-    elseif a:flag == 'e'
-        for line in getline(a:beg,a:end)
-            let characterscount += len(substitute(line,'\s','','g'))
-        endfor
-    endif
-    return characterscount
+function! s:Docinfo.CountCharacters(line)
+    let line = substitute(a:line,'['.s:format_docinfo_charmask.']','','g')
+    return len(a:line) - len(line) + len(line) / s:format_docinfo_wcharwidth
 endfunction s:Docinfo.CountCharacters
 
-" flag == 'i': include empty lines
-" flag == 'e': exclude empty lines
-function! s:Docinfo.CountLines(beg,end,flag)
-    if a:flag == 'i'
-        return a:end - a:beg + 1
-    elseif a:flag == 'e'
-        let linescount = 0
-        for line in getline(a:beg,a:end)
-            if line !~ '^\s*$'
-                let linescount += 1
-            endif
-        endfor
-        return linescount
-    endif
-endfunction s:Docinfo.CountLines
-
-function! s:Docinfo.CountWords(beg,end)
-    let wordscount = 0
-    for line in getline(a:beg,a:end)
-        let wordscount += len(split(line,'\W\+'))
-    endfor
-    return wordscount
+function! s:Docinfo.CountWords(line)
+    return [len(substitute(a:line,'['.s:format_docinfo_charmask.']','','g'))/s:format_docinfo_wcharwidth,len(split(substitute(a:line,'[^'.s:format_docinfo_charmask.']','','g'),'\W\+'))]
 endfunction s:Docinfo.CountWords
+
+function! s:Docinfo.CountAll(beg,end)
+    let charcount = 0
+    let nospacechar = 0
+    let wordcount = 0
+    let asiaword = 0
+    let nonasiaword = 0
+    let linecount = 0
+    let noempline = 0
+    for line in getline(a:beg,a:end)
+        let charcount += self.CountCharacters(line)
+        let nospacechar += self.CountCharacters(substitute(line,'\s','','g'))
+        let tempwords = self.CountWords(line)
+        let asiaword += tempwords[0]
+        let nonasiaword += tempwords[1]
+        let wordcount += tempwords[0] + tempwords[1]
+        let linecount += 1
+        if line !~ '^\s*$'
+            let noempline += 1
+        endif
+    endfor
+    return [charcount,nospacechar,wordcount,asiaword,nonasiaword,linecount,noempline]
+endfunction s:Docinfo.CountAll
 
 function <SID>:InsertLinesUpwards(currentlineno,lines)
     if a:lines <= 0
@@ -211,9 +207,9 @@ endfunction <SID>:InsertLinesDownwards
 
 function! s:List.Enumeratelist.EnumerateList(style,action) range
     if a:action == 'a'
-        call s:List.Enumeratelist.Add(a:firstline,a:lastline,a:style)
+        call self.Add(a:firstline,a:lastline,a:style)
     elseif a:action == 'd'
-        call s:List.Enumeratelist.Del(a:firstline,a:lastline,a:style)
+        call self.Del(a:firstline,a:lastline,a:style)
     endif
 endfunction s:List.Enumeratelist.EnumerateList
 
@@ -232,6 +228,10 @@ function! s:List.Enumeratelist.Add(beg,end,style)
     call <SID>:InsertLinesDownwards(a:end + g:format_list_ceil,g:format_list_floor)
 endfunction s:List.Enumeratelist.Add
 
+function! <SID>:CountIndent(string)
+    return strpart(a:string,0,match(a:string,'\ze\S'))
+endfunction <SID>:CountIndent
+
 " any line in selected area which matches:
 " 'sytle.space(s:format_list_interval)'
 " will be deleted
@@ -239,10 +239,12 @@ function! s:List.Enumeratelist.Del(beg,end,style)
     let linenum = a:beg
     let spaces = <SID>:MakeCharacters(s:format_list_interval,' ')
     while linenum <= a:end
-        let line = substitute(getline(linenum),'^\s*','','')
+        let line = getline(linenum)
+        let orgindent = <SID>:CountIndent(line)
+        let line = substitute(line,'^\s*','','')
         " style would not be null
         if line[:(len(a:style) + s:format_list_interval - 1)] == (a:style . spaces)
-            call setline(linenum,substitute(line[len(a:style):],'^\s*','',''))
+            call setline(linenum,orgindent . substitute(line[len(a:style):],'^\s*','',''))
         endif
         let linenum += 1
     endwhile
@@ -250,12 +252,12 @@ endfunction s:List.Enumeratelist.Del
 
 function! s:Headfoot.Head(symbol) range
     let sym = a:symbol[0]
-    call s:Headfoot.AddHeadFoot(a:firstline,sym,'h')
+    call self.AddHeadFoot(a:firstline,sym,'h')
 endfunction s:Headfoot.Head
 
 function! s:Headfoot.Foot(symbol) range
     let sym = a:symbol[0]
-    call s:Headfoot.AddHeadFoot(a:firstline,sym,'f')
+    call self.AddHeadFoot(a:firstline,sym,'f')
 endfunction s:Headfoot.Foot
 
 function! s:Headfoot.AddHeadFoot(lineno,symbol,type)
@@ -299,7 +301,7 @@ function! <SID>:MakeCharacters(width,character)
 endfunction <SID>:MakeCharacters
 
 " NOTE: string should not include space
-function! <SID>:ParseQuestionMark(string)
+function! s:List.Numberlist.ParseQuestionMark(string)
     let idxstart = match(a:string,'?')
     if idxstart >= 0
         " if ? located on the end of line, then return len(line)
@@ -307,10 +309,10 @@ function! <SID>:ParseQuestionMark(string)
         return [strpart(a:string,0,idxstart),'?',strpart(a:string,poststart,len(a:string)-poststart)]
     endif
     return ['','','']
-endfunction <SID>:ParseQuestionMark
+endfunction s:List.Numberlist.ParseQuestionMark
 
 " NOTE: string should not include space
-function! <SID>:ParseNumber(string)
+function! s:List.Numberlist.ParseNumber(string)
     let idxstart = match(a:string,'\d')
     if idxstart >= 0
         " if \d\+ located on the end of line, then return len(line)
@@ -318,19 +320,19 @@ function! <SID>:ParseNumber(string)
         return [strpart(a:string,0,idxstart),strpart(a:string,idxstart,poststart-idxstart),strpart(a:string,poststart,len(a:string)-poststart)]
     endif
     return ['','','']
-endfunction <SID>:ParseNumber
+endfunction s:List.Numberlist.ParseNumber
 
-function! <SID>:StyleParser(style)
+function! s:List.Numberlist.StyleParser(style)
     let style = substitute(a:style,'\s','','g')
-    let tokens = <SID>:ParseQuestionMark(a:style)
+    let tokens = self.ParseQuestionMark(a:style)
     if tokens[1] != ''
         return tokens
     endif
-    let tokens = <SID>:ParseNumber(a:style)
+    let tokens = self.ParseNumber(a:style)
     return tokens
-endfunction <SID>:StyleParser
+endfunction s:List.Numberlist.StyleParser
 
-function! <SID>:LastNumberList(lineno,presegment,postsegment)
+function! s:List.Numberlist.LastNumberList(lineno,presegment,postsegment)
     let inf = max([1,a:lineno - g:format_list_max_scope])
     let ln = a:lineno
     while ln >= inf
@@ -352,17 +354,17 @@ function! <SID>:LastNumberList(lineno,presegment,postsegment)
         let ln -= 1
     endwhile
     return 0
-endfunction <SID>:LastNumberList
+endfunction s:List.Numberlist.LastNumberList
 
 function! s:List.Numberlist.NumberList(style,action) range
-    let parsed = <SID>:StyleParser(a:style)
+    let parsed = self.StyleParser(a:style)
     if parsed[1] == ''
         return
     endif
     if a:action == 'a'
-        call s:List.Numberlist.Add(a:firstline,a:lastline,parsed[0],parsed[1],parsed[2])
+        call self.Add(a:firstline,a:lastline,parsed[0],parsed[1],parsed[2])
     elseif a:action == 'd'
-        call s:List.Numberlist.Del(a:firstline,a:lastline,parsed[0],parsed[2])
+        call self.Del(a:firstline,a:lastline,parsed[0],parsed[2])
     endif
 endfunction s:List.Numberlist.NumberList
 
@@ -372,8 +374,13 @@ function! s:List.Numberlist.Add(beg,end,presegment,index,postsegment)
     let indentspaces = <SID>:MakeCharacters(g:format_list_indent,' ')
     let intervalspaces = <SID>:MakeCharacters(s:format_list_interval,' ')
     let lineno = a:end
-    let idx = s:Docinfo.CountLines(a:beg,a:end,'e')
-    let idx += (a:index == '?' ? <SID>:LastNumberList(lineno,a:presegment,a:postsegment) : a:index - 1)
+    let idx = 0
+    for line in getline(a:beg,a:end)
+        if line !~ '^\s*$'
+            let idx += 1
+        endif
+    endfor
+    let idx += (a:index == '?' ? self.LastNumberList(lineno,a:presegment,a:postsegment) : a:index - 1)
     let spaces = ''
     while lineno >= a:beg
         let line = substitute(getline(lineno),'^\s*','','')
@@ -396,7 +403,9 @@ endfunction s:List.Numberlist.Add
 function! s:List.Numberlist.Del(beg,end,presegment,postsegment)
     let lineno = a:end
     while lineno >= a:beg
-        let line = substitute(getline(lineno),'^\s*','','')
+        let line = getline(lineno)
+        let orgindent = <SID>:CountIndent(line)
+        let line = substitute(line,'^\s*','','')
         if a:presegment !~ '^\s*$'
             if line[:(len(a:presegment)-1)] == a:presegment
                 let line = line[len(a:presegment):]
@@ -411,13 +420,10 @@ function! s:List.Numberlist.Del(beg,end,presegment,postsegment)
             let lineno -= 1
             continue
         endif
-        if a:postsegment !~ '^\s*$'
-            let spaces = <SID>:MakeCharacters(s:format_list_interval,' ')
-            if line[:(len(a:postsegment) + s:format_list_interval - 1)] == (a:postsegment . spaces)
-                call setline(lineno,substitute(line[len(a:postsegment):],'^\s*','',''))
-            endif
-        else
-            call setline(lineno,substitute(line,'^\s*','',''))
+        let spaces = <SID>:MakeCharacters(s:format_list_interval,' ')
+        " whether postsegment is null or not, below process will over it.
+        if line[:(len(a:postsegment) + s:format_list_interval - 1)] == (a:postsegment . spaces)
+            call setline(lineno,orgindent . substitute(line[len(a:postsegment):],'^\s*','',''))
         endif
         let lineno -= 1
     endwhile
@@ -434,11 +440,15 @@ function! <SID>:RealTextWidth()
 endfunction <SID>:RealTextWidth
 
 function! s:Docinfo.Statistics() range
-    echo "Characters (with spaces): "(s:Docinfo.CountCharacters(a:firstline,a:lastline,'i'))
-    echo "Characters (no spaces): "(s:Docinfo.CountCharacters(a:firstline,a:lastline,'e'))
-    echo "Words: "(s:Docinfo.CountWords(a:firstline,a:lastline))
-    echo "Lines (with empty): "(s:Docinfo.CountLines(a:firstline,a:lastline,'i'))
-    echo "Lines (no empty): "(s:Docinfo.CountLines(a:firstline,a:lastline,'e'))
+    let result = self.CountAll(a:firstline,a:lastline)
+    echo "From line " . a:firstline . " to " . a:lastline
+    echo "Characters (with spaces): " . result[0]
+    echo "Characters (no spaces): " . result[1]
+    echo "Words: " . result[2]
+    echo '  Asia characters: ' . result[3]
+    echo '  Non-asia words: ' . result[4]
+    echo "Lines (with empty): " . result[5]
+    echo "Lines (no empty): " . result[6]
 endfunction s:Docinfo.Statistics
 
 function! <SID>:SuperCleverTab()
@@ -462,9 +472,9 @@ endfunction <SID>:SuperCleverTab
 function! s:Textblock.TextBlock(symbol,action) range
     let sym = a:symbol[0]
     if a:action == 'a'
-        call s:Textblock.Add(a:firstline,a:lastline,sym)
+        call self.Add(a:firstline,a:lastline,sym)
     elseif a:action == 'd'
-        call s:Textblock.Del(a:firstline,a:lastline,sym)
+        call self.Del(a:firstline,a:lastline,sym)
     endif
 endfunction s:Textblock.TextBlock
 
@@ -505,12 +515,14 @@ endfunction s:Textblock.Add
 function! s:Textblock.Del(beg,end,symbol)
     let lineno = a:beg
     while lineno <= a:end
-        let line = substitute(substitute(getline(lineno),'^\s*','',''),'\s*$','','')
+        let line = getline(lineno)
+        let orgindent = <SID>:CountIndent(line)
+        let line = substitute(substitute(line,'^\s*','',''),'\s*$','','')
         let spaces = <SID>:MakeCharacters(s:format_block_interval,' ')
         if line[:(s:format_block_interval)] == (a:symbol . spaces)
             let line = line[(s:format_block_interval+1):]
             if line[len(line) - 1] == a:symbol
-                call setline(lineno,substitute(line[:(len(line) - 2)],'\s*$','',''))
+                call setline(lineno,orgindent . substitute(line[:(len(line) - 2)],'\s*$','',''))
             endif
         endif
         if line == <SID>:MakeCharacters(len(line),a:symbol)
