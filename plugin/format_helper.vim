@@ -1,8 +1,8 @@
 " Title:	Vim Format Helper
 " Maintainer:	Frank Sun <frank.sun.319@gmail.com>
 " Description:
-" Last Change:	2008-11-05
-" Version:	1.7.6
+" Last Change:	2008-11-07
+" Version:	1.7.8
 
 " Only do this when not done yet for this buffer
 if exists("b:format_helper")
@@ -21,9 +21,9 @@ set cpo-=C
 " global variable to control alignation effect
 let g:format_align_offset = 0
 
-" script variable to control statistics
-let s:format_docinfo_charmask = '[:alnum:][:blank:][:punct:]'
-let s:format_docinfo_wcharwidth = (&encoding == 'utf-8' ? 3 : 2)
+" script variable to handle wide character
+let s:format_scharmask = '[:alnum:][:blank:][:punct:]'
+let s:format_wcharwidth = (&encoding == 'utf-8' ? 3 : 2)
 
 " global variables to control effect of enumerate list and number list
 let g:format_list_ceil = 0
@@ -156,12 +156,18 @@ function! <SID>:ClosePair(char)
 endfunction <SID>:ClosePair
 
 function! s:Docinfo.CountCharacters(line)
-    let line = substitute(a:line,'['.s:format_docinfo_charmask.']','','g')
-    return len(a:line) - len(line) + len(line) / s:format_docinfo_wcharwidth
+    let line = substitute(a:line,'['.s:format_scharmask.']','','g')
+    " return value: [single byte chars,wide byte chars]
+    return [len(a:line)-len(line),len(line)/s:format_wcharwidth]
 endfunction s:Docinfo.CountCharacters
 
+function! <SID>:LineViewLength(line)
+    let chars = s:Docinfo.CountCharacters(a:line)
+    return chars[0] + 2 * chars[1]
+endfunction <SID>:LineViewLength
+
 function! s:Docinfo.CountWords(line)
-    return [len(substitute(a:line,'['.s:format_docinfo_charmask.']','','g'))/s:format_docinfo_wcharwidth,len(split(substitute(a:line,'[^'.s:format_docinfo_charmask.']','','g'),'\W\+'))]
+    return [len(substitute(a:line,'['.s:format_scharmask.']','','g'))/s:format_wcharwidth,len(split(substitute(a:line,'[^'.s:format_scharmask.']','','g'),'\W\+'))]
 endfunction s:Docinfo.CountWords
 
 function! s:Docinfo.CountAll(beg,end)
@@ -173,8 +179,10 @@ function! s:Docinfo.CountAll(beg,end)
     let linecount = 0
     let noempline = 0
     for line in getline(a:beg,a:end)
-        let charcount += self.CountCharacters(line)
-        let nospacechar += self.CountCharacters(substitute(line,'\s','','g'))
+        let tempchars = self.CountCharacters(line)
+        let charcount += tempchars[0] + tempchars[1]
+        let tempchars = self.CountCharacters(substitute(line,'\s','','g'))
+        let nospacechar += tempchars[0] + tempchars[1]
         let tempwords = self.CountWords(line)
         let asiaword += tempwords[0]
         let nonasiaword += tempwords[1]
@@ -261,33 +269,31 @@ function! s:Headfoot.Foot(symbol) range
 endfunction s:Headfoot.Foot
 
 function! s:Headfoot.AddHeadFoot(lineno,symbol,type)
-    execute a:lineno
-    if getline('.') =~ '^\s*$'
+    let line = substitute(substitute(getline(a:lineno),'^\s*','',''),'\s*$','','')
+    if line =~ '^\s*$'
         return
     endif
-    execute '.s/^\s*//'
-    execute '.s/\s*$//'
     let spaces = <SID>:MakeCharacters(g:format_headfoot_indent,' ')
+    let headfootline = spaces . <SID>:MakeCharacters(<SID>:LineViewLength(line),a:symbol) . "\n"
+    call setreg(v:register,headfootline)
+    call setline(a:lineno,spaces . line)
+    execute a:lineno
     if a:type == 'h'
-        execute "normal yyPVr" . a:symbol
+        execute "normal \"\"P"
         call <SID>:InsertLinesUpwards('.',g:format_head_ceil)
-        call setline(line('.'),spaces . getline('.'))
         normal j
-        call setline(line('.'),spaces . getline('.'))
     elseif a:type == 'f'
-        execute "normal yypVr" . a:symbol
+        execute "normal \"\"p"
         call <SID>:InsertLinesDownwards('.',g:format_foot_floor)
-        call setline(line('.'),spaces . getline('.'))
         normal k
-        call setline(line('.'),spaces . getline('.'))
     endif
 endfunction s:Headfoot.AddHeadFoot
 
 function! <SID>:LongestLength(beg,end)
-    let maxlength = len(substitute(substitute(getline(a:beg),'^\s*','',''),'\s*$','',''))
+    let maxlength = <SID>:LineViewLength(substitute(substitute(getline(a:beg),'^\s*','',''),'\s*$','',''))
     for line in getline(a:beg,a:end)
         let line = substitute(substitute(line,'^\s*','',''),'\s*$','','')
-        let maxlength = max([maxlength,len(line)])
+        let maxlength = max([maxlength,<SID>:LineViewLength(line)])
     endfor
     return maxlength
 endfunction <SID>:LongestLength
@@ -490,7 +496,7 @@ function! s:Textblock.Add(beg,end,symbol)
         while lineno <= a:end
             let line = substitute(substitute(substitute(getline(lineno),'^\s*','',''),'\s*$','',''),'\t',' ','g')
             let intervalspaces = <SID>:MakeCharacters(s:format_block_interval,' ')
-            call setline(lineno,indentspaces.a:symbol.intervalspaces.line.<SID>:MakeCharacters(framewidth-len(line)-s:format_block_interval-2,' ').a:symbol)
+            call setline(lineno,indentspaces.a:symbol.intervalspaces.line.<SID>:MakeCharacters(framewidth-<SID>:LineViewLength(line)-s:format_block_interval-2,' ').a:symbol)
             let lineno += 1
         endwhile
         let internalceilfloor = indentspaces.a:symbol.<SID>:MakeCharacters(framewidth - 2,' ').a:symbol

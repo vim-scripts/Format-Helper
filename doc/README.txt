@@ -32,7 +32,7 @@ FUNCTIONS OUTLINE
 * NOTE: 
 
     (1) It can handle wide (2 or 3 bytes) character languages (for instance, Chinese, Japanese, Korean, etc.). If &encoding=='utf-8', width of wide character is set to 3, otherwise 2.
-    (2) As my tests show, precision of this function is better than Win-Word's "word count" tool, which only identifies space as word-delimiter, meanwhile, this script takes all non-words (\W) into account. Unfortunately, it is not as efficient as win-word when counts large files (to handle a file with 30,000 lines, win-word costs about 3.5 seconds, and this script costs about 9 seconds).
+    (2) As my tests show, precision of this function is better than Win-Word's "word count" tool, which only identifies space as word-delimiter, meanwhile, this script takes all non-word characters (\W) into account. Unfortunately, it is not as efficient as win-word when handles large files (to handle a file with 30,000 lines, win-word costs about 3.5 seconds, and this script costs about 9 seconds).
 
 2. Number list addition and deletion
 ------------------------------------
